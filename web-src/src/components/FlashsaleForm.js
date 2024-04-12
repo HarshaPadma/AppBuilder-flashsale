@@ -2,7 +2,7 @@
 * <license header>
 */
 
-import React, { useState } from 'react'
+import React, {useEffect, useState} from 'react'
 import PropTypes from 'prop-types'
 import { Editor } from "react-draft-wysiwyg";
 import "react-draft-wysiwyg/dist/react-draft-wysiwyg.css";
@@ -22,6 +22,7 @@ import allActions from '../config.json'
 import axios from "axios";
 import { EditorState, ContentState } from 'draft-js';
 import actionWebInvoke from '../utils'
+import {forEach} from "core-js/internals/array-iteration";
 
 // remove the deprecated key
 const actions = Object.keys(allActions).reduce((obj, key) => {
@@ -32,12 +33,24 @@ const actions = Object.keys(allActions).reduce((obj, key) => {
 }, {})
 
 const FlashsaleForm = (props) => {
+    useEffect(() => {
+        fetchCategoryData()
+            .catch(error => {
+                console.error('Error fetching data:', error);
+            });
+        fetchStoreData()
+            .catch(error => {
+                console.error('Error fetching data:', error);
+            });
+    }, []);
     const [state, setState] = useState({
         storeviewSelected: null,
         categorySelected: null,
         imageSelected: ''
     })
+    const [results, setResults] = useState([]);
     const [selectedStartDateTime, setSelectedStartDateTime] = useState('');
+
     const [selectedEndDateTime, setSelectedEndDateTime] = useState('');
     const handleStartDateChange = event => {
         const selectedStartDateTimeValue = event.target.value;
@@ -68,13 +81,16 @@ const FlashsaleForm = (props) => {
         if (endDate > startDate || (endDate.getTime() === startDate.getTime() && endTime > startTime)) {
             setSelectedEndDateTime(selectedEndDateTimeValue);
         } else {
-            alert('Select date and time greater than or equal to start value!');
+            alert('Select date and time greater than start value!');
             // Reset the input value
             event.target.value = selectedEndDateTime;
         }
     };
+    const [image, setImage] = useState();
+
     const imageUpload = event => {
         const file = event.target.files[0]; // Get the first file selected
+        setImage(URL.createObjectURL(file));
         if (file) {
             const fileName = file.name;
             const fileType = fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
@@ -98,44 +114,68 @@ const FlashsaleForm = (props) => {
     const onEditorStateChange = (editorState) => {
         setEditorState(editorState);
     };
-    // async function fetchData() {
-    //     // Fetch data
-    //     const { data } = await axios.get("https://app.dyson.test/rest/V1/");
-    //     const results = []
-    //     // Store results in the results array
-    //     data.forEach((value) => {
-    //         results.push({
-    //             key: value.name,
-    //             value: value.id,
-    //         });
-    //     });
-    //     // Update the options state
-    //     setOptions([
-    //         {key: 'Select a company', value: ''},
-    //         ...results
-    //     ])
-    // }
-    const storeViews = {
-        0: 'All Store Views',
-        1: 'Store-1',
-        2: 'Store-2',
-    };
-    const categories = {
-        0: 'All Categories',
-        1: 'Category-1',
-        2: 'Category-2',
-    };
+    const [stores, setStores] = useState([]);
+    //added
+
+    //added
+    function buildFlattenedArray(items, parentPath, depth) {
+        const children = items.filter(item => item.path.startsWith(parentPath + '/') && item.path.split('/').length === parentPath.split('/').length + 1);
+
+        if (children.length === 0) {
+            return [];
+        }
+
+        const flattenedArray = [];
+        children.forEach(child => {
+            flattenedArray.push('--'.repeat(depth) + child.name);
+            const nestedChildren = buildFlattenedArray(items, child.path, depth + 1);
+            flattenedArray.push(...nestedChildren);
+        });
+
+        return flattenedArray;
+    }
+    async function fetchCategoryData() {
+        const response = await fetch("https://master-7rqtwti-sgwkmfw5dcndm.ap-4.magentosite.cloud/graphql?query=%7B%0A%20%20categories(filters%3A%20%7B%7D%2C%20pageSize%3A%2020%2C%20currentPage%3A%201)%20%7B%0A%20%20%20%20items%20%7B%0A%20%20%20%20%20%20name%0A%20%20%20%20%20%20path%0A%20%20%20%20%20%20level%0A%20%20%20%20%23%20children%20%7B%0A%20%20%20%20%23%20%20%20name%0A%20%20%20%20%23%20%7D%0A%20%20%20%20%7D%0A%20%20%20%20total_count%0A%20%20%7D%0A%7D%0A&variables=%7B%7D", {
+            mode: 'cors'
+        });
+        const results = await response.json();
+        const parentPath = "1/2";
+        const flattenedArray= buildFlattenedArray(results['data']['categories']['items'], parentPath, 1);
+        console.log(flattenedArray)
+        // const level = 2;
+        // const a = results['data']['categories']['items'].filter((item) => item.level === level && item.path.startsWith(path));
+        // console.log(a);
+        // const newOptions = flattenedArray.map((item, index) => ({ label: item, value: index.toString() }));
+        // const newOptions = results['data']['categories']['items'].map((item, index) => ({
+        //     name: item.name+' ('+item.path+')',
+        //     // name: item.name+' ('+item.path+')'+'-'.repeat(item.level-1),
+        //     value: index.toString()
+        // }));
+
+        setResults(flattenedArray);
+        // console.log(newOptions);
+    }
+    async function fetchStoreData() {
+        const response = await fetch("https://master-7rqtwti-sgwkmfw5dcndm.ap-4.magentosite.cloud/graphql?query=query%20%7B%0A%20%20availableStores(useCurrentGroup%3A%20true)%20%7B%0A%20%20%20%20store_code%0A%20%20%20%20store_name%0A%20%20%20%20%7D%0A%7D%0A&variables=%7B%7D", {
+            mode: 'cors'
+        });
+        const results = await response.json();
+        const newOptions = results['data']['availableStores'].map((item) => ({ name: item.store_name, value: item.store_code}));
+        setStores(newOptions);
+        console.log(newOptions);
+    }
     return (
         <View width="size-6000">
             <Heading level={1}>Flashsale Settings</Heading>
-            {Object.keys(storeViews).length > 0 && (
+            {Object.keys(stores).length > 0 && (
                 <Form necessityIndicator="label">
+                    <label htmlFor="options">Select a Store View</label>
                     <Picker
                         label="Select Store View"
                         isRequired={true}
                         placeholder="select store-view"
                         aria-label="select store-view"
-                        items={Object.keys(storeViews).map((k) => ({ name: storeViews[k], value: k }))}
+                        items={stores}
                         itemKey="name"
                         onSelectionChange={(name) =>
                             setState({
@@ -149,10 +189,10 @@ const FlashsaleForm = (props) => {
                     <p>Event Start From (required)</p>
                     <input aria-label="Event Start From" type="datetime-local"
                            required={true}
-                    onChange={handleStartDateChange}/>
+                           onChange={handleStartDateChange}/>
                     <p>Event End (required)</p>
                     <input aria-label="Event End" type="datetime-local"
-                    onChange={handleEndDateChange}
+                           onChange={handleEndDateChange}
                            required={true}/>
                     <p>Description (optional)</p>
                     <Editor
@@ -162,35 +202,26 @@ const FlashsaleForm = (props) => {
                     />
                     <div style={{ height: '10px' }}></div>
                     <input type="file" accept="image/*" required={true} onChange={imageUpload}/>
-                    <Flex>
-                        <ActionButton
-                            variant="primary"
-                            type="button"
-                            onPress={invokeAction.bind(this)}
-                            isDisabled={!state.imageSelected}
-                        ><Function aria-label="Invoke" /><Text>Upload Banner</Text></ActionButton>
-                    </Flex>
-                    <Picker
-                        label="Select Category"
-                        isRequired={true}
-                        placeholder="select category"
-                        aria-label="select category"
-                        items={Object.keys(categories).map((k) => ({ name: categories[k], value: k }))}
-                        itemKey="name"
-                        onSelectionChange={(name) =>
+                    <img src={image} style={{ maxWidth: '200px', maxHeight: '200px' }} />
+                    <label htmlFor="options">Select a category</label>
+                    <div>
+                        <select id="options" style={{padding: '6px', width:"470px"}} onChange={(name) =>
                             setState({
                                 ...state,
                                 categorySelected: name
                             })
-                        }
-                    >
-                        {(item) => <Item key={item.name}>{item.name}</Item>}
-                    </Picker>
+                        }>
+                            <option value="">Select category</option>
+                            {results.map((option, index) => (
+                                <option key={index} value={option}>{option}</option>
+                            ))}
+                        </select>
+                    </div>
                     <Flex>
                         <ActionButton
                             variant="primary"
                             type="button"
-                            onPress={invokeAction.bind(this)}
+                            onPress={invokeAction}
                             isDisabled={!state.categorySelected}
                         ><Function aria-label="Invoke" /><Text>Save</Text></ActionButton>
                     </Flex>
@@ -199,9 +230,9 @@ const FlashsaleForm = (props) => {
         </View>
     )
 
-    // invokes a the selected backend actions with input headers and params
-    async function invokeAction () {
-        alert('hi');
+    // invokes a the selected backend actions
+    function invokeAction () {
+        alert('Saved!!!');
     }
 }
 FlashsaleForm.propTypes = {
